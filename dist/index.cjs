@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 "use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -30,7 +29,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 // server/index.ts
 var import_express = __toESM(require("express"), 1);
 var import_path = __toESM(require("path"), 1);
-var import_url = require("url");
 
 // server/db.ts
 var import_node_postgres = require("drizzle-orm/node-postgres");
@@ -158,16 +156,15 @@ function registerRoutes(app2) {
 }
 
 // server/index.ts
-var import_meta = {};
-var __dirname = import_path.default.dirname((0, import_url.fileURLToPath)(import_meta.url));
 var app = (0, import_express.default)();
 var PORT = parseInt(process.env.PORT || "3000");
 app.use(import_express.default.json());
 registerRoutes(app);
 if (process.env.NODE_ENV === "production") {
-  app.use(import_express.default.static(import_path.default.resolve(__dirname, "../dist/public")));
+  const publicDir = import_path.default.resolve(process.cwd(), "dist/public");
+  app.use(import_express.default.static(publicDir));
   app.get("/{*splat}", (_req, res) => {
-    res.sendFile(import_path.default.resolve(__dirname, "../dist/public/index.html"));
+    res.sendFile(import_path.default.resolve(publicDir, "index.html"));
   });
 }
 app.listen(PORT, "0.0.0.0", () => {
