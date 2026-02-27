@@ -1,5 +1,5 @@
 modules = ["nodejs-20"]
-run = "npm install && npm run build && npm run start:prod"
+run = "npm install && npm run build && npx tsx server/index.ts"
 
 [nix]
 channel = "stable-24_05"

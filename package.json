@@ -9,7 +9,7 @@
     "server": "tsx watch server/index.ts",
     "build": "vite build",
     "start": "node dist/server.js",
-    "start:prod": "node dist/server.js"
+    "start:prod": "tsx server/index.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
