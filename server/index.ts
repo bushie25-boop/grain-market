@@ -1,21 +1,23 @@
-import express from 'express'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import router from './routes.js'
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { registerRoutes } from './routes.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const app = express()
-const PORT = 3001
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+const PORT = parseInt(process.env.PORT || '3000');
 
-app.use(express.json())
-app.use('/api', router)
+app.use(express.json());
 
-// Serve built client in production
-app.use(express.static(path.resolve(__dirname, '../dist')))
-app.get('/{*splat}', (_req, res) => {
-  res.sendFile(path.resolve(__dirname, '../dist/index.html'))
-})
+registerRoutes(app);
 
-app.listen(PORT, () => {
-  console.log(`🌽 Grain Market server running on http://localhost:${PORT}`)
-})
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.resolve(__dirname, '../dist/public')));
+  app.get('/{*splat}', (_req, res) => {
+    res.sendFile(path.resolve(__dirname, '../dist/public/index.html'));
+  });
+}
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🌽 Grain Market running on port ${PORT}`);
+});

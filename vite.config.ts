@@ -5,18 +5,18 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  root: 'client',
+  build: {
+    outDir: '../dist/public',
+    emptyOutDir: true,
+  },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: { '@': path.resolve(__dirname, 'client/src') },
   },
   server: {
-    port: 5174,
+    port: 5173,
     proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
+      '/api': 'http://localhost:3000',
     },
   },
 })
