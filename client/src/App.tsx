@@ -1,459 +1,203 @@
-import React, { useState } from 'react';
-import * as Tabs from '@radix-ui/react-tabs';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   getContracts, createContract, updateContract, deleteContract,
-  getAlerts, createAlert, deleteAlert,
-  getLatestSnapshot, getMarketHistory, createSnapshot,
-  type Contract, type Alert, type MarketSnapshot
+  getLatestSnapshot,
+  type Contract, type MarketSnapshot,
 } from './lib/api';
 import { ContractModal } from './components/ContractModal';
 import { PriceModal } from './components/PriceModal';
-import { AlertModal } from './components/AlertModal';
+import { Dashboard } from './components/tabs/Dashboard';
+import { Contracts } from './components/tabs/Contracts';
+import { MarketWatch } from './components/tabs/MarketWatch';
+import { Options } from './components/tabs/Options';
+import { MarketingPlan } from './components/tabs/MarketingPlan';
+import { Elevators } from './components/tabs/Elevators';
 
-function fmt(n: number | null | undefined, decimals = 4) {
-  if (n == null) return '—';
-  return n.toFixed(decimals);
+type Tab = 'dashboard' | 'contracts' | 'marketwatch' | 'options' | 'marketing' | 'elevators';
+
+const NAV: { id: Tab; label: string; icon: string }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+  { id: 'contracts', label: 'Contracts', icon: '📋' },
+  { id: 'marketwatch', label: 'Market Watch', icon: '📈' },
+  { id: 'options', label: 'Options', icon: '⚙️' },
+  { id: 'marketing', label: 'Marketing Plan', icon: '🗺️' },
+  { id: 'elevators', label: 'Elevators', icon: '🌾' },
+];
+
+function useNow() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
 }
 
-function statusBadge(status: string) {
-  const colors: Record<string, string> = {
-    open: 'bg-green-100 text-green-800',
-    delivered: 'bg-blue-100 text-blue-800',
-    cancelled: 'bg-red-100 text-red-800',
-  };
-  return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100'}`}>
-      {status}
-    </span>
-  );
-}
-
-// ──────────────── Dashboard ────────────────
-function Dashboard({ contracts, snapshot, alerts }: { contracts: Contract[]; snapshot: MarketSnapshot | null; alerts: Alert[] }) {
-  const corn = contracts.filter(c => c.crop === 'corn' && c.status === 'open');
-  const soy = contracts.filter(c => c.crop === 'soybeans' && c.status === 'open');
-  const avgPrice = (arr: Contract[]) => arr.length ? arr.reduce((s, c) => s + c.price, 0) / arr.length : 0;
-
-  const now = new Date();
-  const thisMonth = contracts.filter(c => {
-    if (!c.deliveryEnd) return false;
-    const d = new Date(c.deliveryEnd);
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  });
-
-  const cards = [
-    { label: 'Corn Bushels', value: corn.reduce((s, c) => s + c.bushels, 0).toLocaleString(), unit: 'bu' },
-    { label: 'Soybean Bushels', value: soy.reduce((s, c) => s + c.bushels, 0).toLocaleString(), unit: 'bu' },
-    { label: 'Avg Corn Price', value: `$${avgPrice(corn).toFixed(4)}`, unit: '/bu' },
-    { label: 'Avg Soy Price', value: `$${avgPrice(soy).toFixed(4)}`, unit: '/bu' },
-  ];
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {cards.map(c => (
-          <div key={c.label} className="bg-white rounded-lg border p-4 shadow-sm">
-            <p className="text-xs text-gray-500 mb-1">{c.label}</p>
-            <p className="text-2xl font-bold text-green-900">{c.value}<span className="text-sm font-normal text-gray-500 ml-1">{c.unit}</span></p>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="bg-white rounded-lg border p-4 shadow-sm">
-          <h3 className="font-semibold mb-3 text-gray-800">Contracts Due This Month</h3>
-          {thisMonth.length === 0 ? (
-            <p className="text-sm text-gray-400">None</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead><tr className="text-left text-gray-500 border-b"><th className="pb-1">Crop</th><th>Elevator</th><th>Bushels</th><th>End</th></tr></thead>
-              <tbody>
-                {thisMonth.map(c => (
-                  <tr key={c.id} className="border-b last:border-0">
-                    <td className="py-1">{c.crop === 'corn' ? '🌽' : '🫘'} {c.crop}</td>
-                    <td>{c.elevator}</td>
-                    <td>{c.bushels.toLocaleString()}</td>
-                    <td>{c.deliveryEnd}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <div className="bg-white rounded-lg border p-4 shadow-sm">
-          <h3 className="font-semibold mb-3 text-gray-800">Current Market Prices</h3>
-          {snapshot ? (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-gray-500 text-xs">🌽 Corn Futures</p>
-                <p className="font-semibold">${fmt(snapshot.cornFutures)}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 text-xs">🌽 Corn Cash</p>
-                <p className="font-semibold">${fmt(snapshot.cornCash)}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 text-xs">🌽 Corn Basis</p>
-                <p className="font-semibold">{fmt(snapshot.cornBasis)}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 text-xs">🫘 Soy Futures</p>
-                <p className="font-semibold">${fmt(snapshot.soyFutures)}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 text-xs">🫘 Soy Cash</p>
-                <p className="font-semibold">${fmt(snapshot.soyCash)}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 text-xs">🫘 Soy Basis</p>
-                <p className="font-semibold">{fmt(snapshot.soyBasis)}</p>
-              </div>
-            </div>
-          ) : <p className="text-sm text-gray-400">No price data yet</p>}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg border p-4 shadow-sm">
-        <h3 className="font-semibold mb-3 text-gray-800">Active Alerts</h3>
-        {alerts.length === 0 ? <p className="text-sm text-gray-400">No active alerts</p> : (
-          <div className="space-y-2">
-            {alerts.map(a => (
-              <div key={a.id} className="flex items-center gap-2 text-sm">
-                <span className="text-yellow-500">⚠️</span>
-                <span>{a.crop === 'corn' ? '🌽' : '🫘'} {a.crop}</span>
-                <span className="text-gray-500">{a.alertType === 'price_above' ? 'above' : 'below'}</span>
-                <span className="font-semibold">${fmt(a.targetValue)}</span>
-                {a.futuresMonth && <span className="text-gray-400">({a.futuresMonth})</span>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ──────────────── Contracts ────────────────
-function ContractsTab({ contracts, onAdd, onEdit, onDelete, onDeliver }: {
-  contracts: Contract[];
-  onAdd: (d: any) => void;
-  onEdit: (id: string, d: any) => void;
-  onDelete: (id: string) => void;
-  onDeliver: (id: string) => void;
-}) {
-  const [cropFilter, setCropFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Contract | null>(null);
-
-  const filtered = contracts.filter(c =>
-    (cropFilter === 'all' || c.crop === cropFilter) &&
-    (statusFilter === 'all' || c.status === statusFilter)
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex gap-2">
-          {['all', 'corn', 'soybeans'].map(f => (
-            <button key={f} onClick={() => setCropFilter(f)}
-              className={`px-3 py-1 rounded text-sm ${cropFilter === f ? 'bg-green-800 text-white' : 'border hover:bg-gray-50'}`}>
-              {f === 'all' ? 'All Crops' : f === 'corn' ? '🌽 Corn' : '🫘 Soybeans'}
-            </button>
-          ))}
-          <span className="w-px bg-gray-200" />
-          {['all', 'open', 'delivered'].map(f => (
-            <button key={f} onClick={() => setStatusFilter(f)}
-              className={`px-3 py-1 rounded text-sm ${statusFilter === f ? 'bg-green-800 text-white' : 'border hover:bg-gray-50'}`}>
-              {f === 'all' ? 'All Status' : f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
-        </div>
-        <button onClick={() => { setEditing(null); setModalOpen(true); }}
-          className="px-4 py-2 bg-green-800 text-white rounded text-sm hover:bg-green-700">
-          + Add Contract
-        </button>
-      </div>
-
-      <div className="bg-white rounded-lg border shadow-sm overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b">
-            <tr className="text-left text-gray-600">
-              <th className="px-4 py-3">Crop</th>
-              <th className="px-4 py-3">Type</th>
-              <th className="px-4 py-3">Bushels</th>
-              <th className="px-4 py-3">Price</th>
-              <th className="px-4 py-3">Basis</th>
-              <th className="px-4 py-3">Elevator</th>
-              <th className="px-4 py-3">Delivery</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-6 text-center text-gray-400">No contracts</td></tr>
-            ) : filtered.map(c => (
-              <tr key={c.id} className="border-b last:border-0 hover:bg-gray-50">
-                <td className="px-4 py-2">{c.crop === 'corn' ? '🌽' : '🫘'} {c.crop}</td>
-                <td className="px-4 py-2">{c.contractType}</td>
-                <td className="px-4 py-2">{c.bushels.toLocaleString()}</td>
-                <td className="px-4 py-2">${fmt(c.price)}</td>
-                <td className="px-4 py-2">{c.basis != null ? fmt(c.basis) : '—'}</td>
-                <td className="px-4 py-2">{c.elevator}</td>
-                <td className="px-4 py-2 text-xs">{c.deliveryStart && c.deliveryEnd ? `${c.deliveryStart} → ${c.deliveryEnd}` : c.deliveryEnd || '—'}</td>
-                <td className="px-4 py-2">{statusBadge(c.status)}</td>
-                <td className="px-4 py-2">
-                  <div className="flex gap-1">
-                    <button onClick={() => { setEditing(c); setModalOpen(true); }} className="px-2 py-1 text-xs border rounded hover:bg-gray-50">Edit</button>
-                    {c.status === 'open' && <button onClick={() => onDeliver(c.id)} className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200">✓ Deliver</button>}
-                    <button onClick={() => onDelete(c.id)} className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200">Del</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <ContractModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSubmit={(data) => editing ? onEdit(editing.id, data) : onAdd(data)}
-        initial={editing}
-      />
-    </div>
-  );
-}
-
-// ──────────────── Market Watch ────────────────
-function MarketWatch({ snapshot, history, alerts, onUpdatePrices, onAddAlert, onDeleteAlert }: {
-  snapshot: MarketSnapshot | null;
-  history: MarketSnapshot[];
-  alerts: Alert[];
-  onUpdatePrices: (d: any) => void;
-  onAddAlert: (d: any) => void;
-  onDeleteAlert: (id: string) => void;
-}) {
-  const [priceOpen, setPriceOpen] = useState(false);
-  const [alertOpen, setAlertOpen] = useState(false);
-
-  const chartData = history.map(s => ({
-    date: s.snapshotAt.slice(0, 10),
-    corn: s.cornFutures,
-    soy: s.soyFutures,
-  }));
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
-        <button onClick={() => setPriceOpen(true)} className="px-4 py-2 bg-green-800 text-white rounded text-sm hover:bg-green-700">
-          📊 Update Prices
-        </button>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        {[
-          { label: '🌽 Corn', futures: snapshot?.cornFutures, cash: snapshot?.cornCash, basis: snapshot?.cornBasis },
-          { label: '🫘 Soybeans', futures: snapshot?.soyFutures, cash: snapshot?.soyCash, basis: snapshot?.soyBasis },
-        ].map(crop => (
-          <div key={crop.label} className="bg-white rounded-lg border p-4 shadow-sm">
-            <h3 className="font-semibold text-gray-800 mb-3">{crop.label}</h3>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="bg-gray-50 rounded p-2">
-                <p className="text-xs text-gray-500">Futures</p>
-                <p className="font-bold text-lg">${fmt(crop.futures)}</p>
-              </div>
-              <div className="bg-gray-50 rounded p-2">
-                <p className="text-xs text-gray-500">Cash</p>
-                <p className="font-bold text-lg">${fmt(crop.cash)}</p>
-              </div>
-              <div className="bg-gray-50 rounded p-2">
-                <p className="text-xs text-gray-500">Basis</p>
-                <p className="font-bold text-lg">{fmt(crop.basis)}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {chartData.length > 0 && (
-        <div className="bg-white rounded-lg border p-4 shadow-sm">
-          <h3 className="font-semibold text-gray-800 mb-3">Price History</h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={chartData}>
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="corn" stroke="#16a34a" name="Corn Futures" dot={false} />
-              <Line type="monotone" dataKey="soy" stroke="#ca8a04" name="Soy Futures" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      <div className="bg-white rounded-lg border p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-gray-800">Price Alerts</h3>
-          <button onClick={() => setAlertOpen(true)} className="px-3 py-1 text-sm bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200">+ Add Alert</button>
-        </div>
-        {alerts.length === 0 ? <p className="text-sm text-gray-400">No active alerts</p> : (
-          <div className="space-y-2">
-            {alerts.map(a => (
-              <div key={a.id} className="flex items-center justify-between text-sm border rounded px-3 py-2">
-                <span>
-                  {a.crop === 'corn' ? '🌽' : '🫘'} {a.crop} — {a.alertType === 'price_above' ? '↑ above' : '↓ below'} <strong>${fmt(a.targetValue)}</strong>
-                  {a.futuresMonth && ` (${a.futuresMonth})`}
-                </span>
-                <button onClick={() => onDeleteAlert(a.id)} className="text-red-500 hover:text-red-700 text-xs">✕</button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <PriceModal open={priceOpen} onClose={() => setPriceOpen(false)} onSubmit={onUpdatePrices} />
-      <AlertModal open={alertOpen} onClose={() => setAlertOpen(false)} onSubmit={onAddAlert} />
-    </div>
-  );
-}
-
-// ──────────────── Analytics ────────────────
-function Analytics({ contracts, snapshot, history }: { contracts: Contract[]; snapshot: MarketSnapshot | null; history: MarketSnapshot[] }) {
-  const [cornTotal, setCornTotal] = useState(50000);
-  const [soyTotal, setSoyTotal] = useState(30000);
-
-  const cornContracted = contracts.filter(c => c.crop === 'corn' && c.status === 'open').reduce((s, c) => s + c.bushels, 0);
-  const soyContracted = contracts.filter(c => c.crop === 'soybeans' && c.status === 'open').reduce((s, c) => s + c.bushels, 0);
-
-  const barData = [
-    { name: 'Corn', contracted: cornContracted, uncontracted: Math.max(0, cornTotal - cornContracted) },
-    { name: 'Soybeans', contracted: soyContracted, uncontracted: Math.max(0, soyTotal - soyContracted) },
-  ];
-
-  const cornContracts = contracts.filter(c => c.crop === 'corn' && c.status === 'open');
-  const soyContracts = contracts.filter(c => c.crop === 'soybeans' && c.status === 'open');
-  const avgCorn = cornContracts.length ? cornContracts.reduce((s, c) => s + c.price, 0) / cornContracts.length : 0;
-  const avgSoy = soyContracts.length ? soyContracts.reduce((s, c) => s + c.price, 0) / soyContracts.length : 0;
-
-  const cornRev = cornContracted * avgCorn;
-  const soyRev = soyContracted * avgSoy;
-  const cornMarket = cornContracted * (snapshot?.cornCash || 0);
-  const soyMarket = soyContracted * (snapshot?.soyCash || 0);
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg border p-4 shadow-sm">
-        <h3 className="font-semibold text-gray-800 mb-3">Contracted vs Uncontracted Bushels</h3>
-        <div className="flex gap-4 mb-3">
-          <label className="text-sm">Corn total: <input type="number" value={cornTotal} onChange={e => setCornTotal(Number(e.target.value))} className="border rounded px-2 py-1 w-28 text-sm ml-1" /></label>
-          <label className="text-sm">Soy total: <input type="number" value={soyTotal} onChange={e => setSoyTotal(Number(e.target.value))} className="border rounded px-2 py-1 w-28 text-sm ml-1" /></label>
-        </div>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={barData}>
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="contracted" stackId="a" fill="#16a34a" name="Contracted" />
-            <Bar dataKey="uncontracted" stackId="a" fill="#d1fae5" name="Uncontracted" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="bg-white rounded-lg border p-4 shadow-sm">
-        <h3 className="font-semibold text-gray-800 mb-3">Revenue Summary</h3>
-        <table className="w-full text-sm">
-          <thead className="text-left text-gray-500 border-b">
-            <tr><th className="pb-2">Crop</th><th>Contracted Revenue</th><th>Market Value</th><th>Difference</th></tr>
-          </thead>
-          <tbody>
-            <tr className="border-b">
-              <td className="py-2">🌽 Corn</td>
-              <td>${cornRev.toLocaleString('en', { maximumFractionDigits: 0 })}</td>
-              <td>${cornMarket.toLocaleString('en', { maximumFractionDigits: 0 })}</td>
-              <td className={cornRev - cornMarket >= 0 ? 'text-green-700' : 'text-red-600'}>{cornRev - cornMarket >= 0 ? '+' : ''}${(cornRev - cornMarket).toLocaleString('en', { maximumFractionDigits: 0 })}</td>
-            </tr>
-            <tr>
-              <td className="py-2">🫘 Soybeans</td>
-              <td>${soyRev.toLocaleString('en', { maximumFractionDigits: 0 })}</td>
-              <td>${soyMarket.toLocaleString('en', { maximumFractionDigits: 0 })}</td>
-              <td className={soyRev - soyMarket >= 0 ? 'text-green-700' : 'text-red-600'}>{soyRev - soyMarket >= 0 ? '+' : ''}${(soyRev - soyMarket).toLocaleString('en', { maximumFractionDigits: 0 })}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ──────────────── App Root ────────────────
 export default function App() {
+  const [tab, setTab] = useState<Tab>('dashboard');
+  const [showPriceModal, setShowPriceModal] = useState(false);
+  const [editContract, setEditContract] = useState<Contract | null | undefined>(undefined);
+  const now = useNow();
   const qc = useQueryClient();
 
   const { data: contracts = [] } = useQuery({ queryKey: ['contracts'], queryFn: getContracts });
-  const { data: alerts = [] } = useQuery({ queryKey: ['alerts'], queryFn: getAlerts });
-  const { data: snapshot = null } = useQuery({ queryKey: ['snapshot'], queryFn: getLatestSnapshot });
-  const { data: history = [] } = useQuery({ queryKey: ['history'], queryFn: () => getMarketHistory(30) });
+  const { data: snapshot } = useQuery({ queryKey: ['snapshot'], queryFn: getLatestSnapshot, refetchInterval: 60000 });
 
-  const addContract = useMutation({ mutationFn: createContract, onSuccess: () => qc.invalidateQueries({ queryKey: ['contracts'] }) });
-  const editContract = useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => updateContract(id, data), onSuccess: () => qc.invalidateQueries({ queryKey: ['contracts'] }) });
-  const removeContract = useMutation({ mutationFn: deleteContract, onSuccess: () => qc.invalidateQueries({ queryKey: ['contracts'] }) });
+  const createMut = useMutation({ mutationFn: createContract, onSuccess: () => qc.invalidateQueries({ queryKey: ['contracts'] }) });
+  const updateMut = useMutation({ mutationFn: ({ id, data }: { id: string; data: Partial<Contract> }) => updateContract(id, data), onSuccess: () => qc.invalidateQueries({ queryKey: ['contracts'] }) });
+  const deleteMut = useMutation({ mutationFn: deleteContract, onSuccess: () => qc.invalidateQueries({ queryKey: ['contracts'] }) });
 
-  const addAlert = useMutation({ mutationFn: createAlert, onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }) });
-  const removeAlert = useMutation({ mutationFn: deleteAlert, onSuccess: () => qc.invalidateQueries({ queryKey: ['alerts'] }) });
+  function handleSaveContract(data: Omit<Contract, 'id' | 'createdAt' | 'updatedAt'>) {
+    if (editContract?.id) {
+      updateMut.mutate({ id: editContract.id, data });
+    } else {
+      createMut.mutate(data as any);
+    }
+    setEditContract(undefined);
+  }
 
-  const addSnapshot = useMutation({ mutationFn: createSnapshot, onSuccess: () => { qc.invalidateQueries({ queryKey: ['snapshot'] }); qc.invalidateQueries({ queryKey: ['history'] }); } });
+  const tone = localStorage.getItem('marketTone') ?? '';
+  const reco = localStorage.getItem('marketReco') ?? '';
+  const watch = localStorage.getItem('marketWatch') ?? '';
+
+  const cornChange = snapshot?.cornFutures != null
+    ? null // Would need prior day for real delta
+    : null;
+
+  function CashReport() {
+    const s = snapshot;
+    return (
+      <div className="flex flex-col gap-3 h-full">
+        <div className="text-xs font-bold tracking-widest text-primary">💵 CASH MORNING REPORT</div>
+        <div className="text-xs text-muted font-price">{now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+        <div className="border-b border-card-border my-1" />
+
+        {!s ? (
+          <div className="text-xs text-muted flex-1">No report today yet — check back after market open.</div>
+        ) : (
+          <>
+            <div>
+              <div className="text-xs font-bold text-gold mb-1.5">🌽 CORN</div>
+              <div className="text-xs text-muted mb-0.5">Dec26</div>
+              <div className="font-price text-xl text-gold font-bold">{s.cornFutures ? `$${s.cornFutures.toFixed(4)}` : '—'}</div>
+              <div className="text-xs text-muted mt-1">Basis: <span className="font-price">{s.cornBasis != null ? `${s.cornBasis > 0 ? '+' : ''}${s.cornBasis}¢` : '—'} (Dummer)</span></div>
+              <div className="text-xs mt-0.5">Cash: <span className="font-price text-gold">{s.cornCash ? `$${s.cornCash.toFixed(4)}` : '—'}</span></div>
+            </div>
+
+            <div className="border-b border-card-border my-1" />
+
+            <div>
+              <div className="text-xs font-bold mb-1.5" style={{ color: '#C47B1C' }}>🫘 SOYBEANS</div>
+              <div className="text-xs text-muted mb-0.5">Nov26</div>
+              <div className="font-price text-xl font-bold" style={{ color: '#C47B1C' }}>{s.soyFutures ? `$${s.soyFutures.toFixed(4)}` : '—'}</div>
+              <div className="text-xs text-muted mt-1">Basis: <span className="font-price">{s.soyBasis != null ? `${s.soyBasis > 0 ? '+' : ''}${s.soyBasis}¢` : '—'} (Dummer)</span></div>
+              <div className="text-xs mt-0.5">Cash: <span className="font-price" style={{ color: '#C47B1C' }}>{s.soyCash ? `$${s.soyCash.toFixed(4)}` : '—'}</span></div>
+            </div>
+
+            <div className="border-b border-card-border my-1" />
+
+            {tone && <div className="text-xs"><span className="text-muted">📊 Market Tone:</span> <span className="text-primary">{tone}</span></div>}
+            {reco && <div className="text-xs"><span className="text-muted">💡 RECOMMENDATION:</span> <span className="text-primary">{reco}</span></div>}
+            {watch && <div className="text-xs"><span className="text-muted">⚠️ WATCH:</span> <span className="text-primary">{watch}</span></div>}
+          </>
+        )}
+
+        <div className="flex-1" />
+        <button onClick={() => setShowPriceModal(true)}
+          className="w-full py-2 rounded text-xs font-bold text-bg transition-colors hover:opacity-90"
+          style={{ background: '#D4A017' }}>
+          Update Prices
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-green-900 text-white px-6 py-4 shadow-md">
-        <h1 className="text-2xl font-bold">🌽 Grain Market</h1>
-        <p className="text-green-300 text-sm">Root Risk Management</p>
+    <div className="min-h-screen flex flex-col" style={{ background: '#0F1A0F' }}>
+      {/* Header */}
+      <header className="px-4 py-3 border-b flex items-center justify-between" style={{ background: '#111f11', borderColor: '#2A4A2A' }}>
+        <div>
+          <div className="text-base font-bold text-primary tracking-wider">💵 CASH GRAIN</div>
+          <div className="text-xs text-muted">Root Risk Management</div>
+        </div>
+        <div className="text-right font-price text-xs text-muted">
+          <div>{now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
+          <div className="text-primary">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
       </header>
 
-      <div className="max-w-7xl mx-auto p-4">
-        <Tabs.Root defaultValue="dashboard">
-          <Tabs.List className="flex gap-1 mb-6 border-b">
-            {['dashboard', 'contracts', 'market', 'analytics'].map(t => (
-              <Tabs.Trigger key={t} value={t}
-                className="px-4 py-2 text-sm font-medium capitalize text-gray-600 border-b-2 border-transparent data-[state=active]:border-green-800 data-[state=active]:text-green-900 hover:text-gray-900">
-                {t === 'market' ? 'Market Watch' : t.charAt(0).toUpperCase() + t.slice(1)}
-              </Tabs.Trigger>
-            ))}
-          </Tabs.List>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left sidebar */}
+        <nav className="hidden md:flex flex-col gap-1 p-3 border-r shrink-0" style={{ width: 200, borderColor: '#2A4A2A', background: '#111f11' }}>
+          {NAV.map(n => (
+            <button key={n.id} onClick={() => setTab(n.id)}
+              className="flex items-center gap-2.5 px-3 py-2 rounded text-left text-sm transition-colors"
+              style={tab === n.id
+                ? { background: '#1A2E1A', color: '#D4A017', borderLeft: '2px solid #D4A017' }
+                : { color: '#8FA88F', borderLeft: '2px solid transparent' }}>
+              <span>{n.icon}</span>
+              <span>{n.label}</span>
+            </button>
+          ))}
+        </nav>
 
-          <Tabs.Content value="dashboard">
-            <Dashboard contracts={contracts} snapshot={snapshot} alerts={alerts} />
-          </Tabs.Content>
-          <Tabs.Content value="contracts">
-            <ContractsTab
-              contracts={contracts}
-              onAdd={(d) => addContract.mutate(d)}
-              onEdit={(id, d) => editContract.mutate({ id, data: d })}
-              onDelete={(id) => removeContract.mutate(id)}
-              onDeliver={(id) => editContract.mutate({ id, data: { status: 'delivered' } })}
-            />
-          </Tabs.Content>
-          <Tabs.Content value="market">
-            <MarketWatch
-              snapshot={snapshot}
-              history={history}
-              alerts={alerts}
-              onUpdatePrices={(d) => addSnapshot.mutate(d)}
-              onAddAlert={(d) => addAlert.mutate(d)}
-              onDeleteAlert={(id) => removeAlert.mutate(id)}
-            />
-          </Tabs.Content>
-          <Tabs.Content value="analytics">
-            <Analytics contracts={contracts} snapshot={snapshot} history={history} />
-          </Tabs.Content>
-        </Tabs.Root>
+        {/* Mobile top nav */}
+        <div className="md:hidden flex overflow-x-auto border-b shrink-0 w-full" style={{ borderColor: '#2A4A2A', background: '#111f11' }}>
+          {NAV.map(n => (
+            <button key={n.id} onClick={() => setTab(n.id)}
+              className="flex flex-col items-center gap-0.5 px-3 py-2 text-xs whitespace-nowrap shrink-0 border-b-2 transition-colors"
+              style={tab === n.id
+                ? { borderColor: '#D4A017', color: '#D4A017' }
+                : { borderColor: 'transparent', color: '#8FA88F' }}>
+              <span>{n.icon}</span>
+              <span>{n.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Main content */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          <div className="max-w-5xl">
+            {tab === 'dashboard' && <Dashboard contracts={contracts} snapshot={snapshot ?? null} />}
+            {tab === 'contracts' && (
+              <Contracts
+                contracts={contracts}
+                onAdd={() => setEditContract(null)}
+                onEdit={c => setEditContract(c)}
+                onDeliver={c => updateMut.mutate({ id: c.id, data: { status: 'delivered' } })}
+                onDelete={c => { if (confirm('Delete this contract?')) deleteMut.mutate(c.id); }}
+              />
+            )}
+            {tab === 'marketwatch' && <MarketWatch snapshot={snapshot ?? null} onUpdatePrices={() => setShowPriceModal(true)} />}
+            {tab === 'options' && <Options />}
+            {tab === 'marketing' && <MarketingPlan contracts={contracts} />}
+            {tab === 'elevators' && <Elevators snapshot={snapshot ?? null} />}
+          </div>
+        </main>
+
+        {/* Right rail */}
+        <aside className="hidden lg:flex flex-col p-4 border-l shrink-0 overflow-y-auto"
+          style={{ width: 300, borderColor: '#2A4A2A', background: '#111f11' }}>
+          <CashReport />
+        </aside>
       </div>
+
+      {/* Modals */}
+      {editContract !== undefined && (
+        <ContractModal
+          contract={editContract}
+          onSave={handleSaveContract}
+          onClose={() => setEditContract(undefined)}
+        />
+      )}
+      {showPriceModal && (
+        <PriceModal
+          snapshot={snapshot ?? null}
+          onClose={() => setShowPriceModal(false)}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['snapshot'] })}
+        />
+      )}
     </div>
   );
 }
